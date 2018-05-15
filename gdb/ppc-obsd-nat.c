@@ -218,6 +218,10 @@ _initialize_ppcobsd_nat (void)
   ppcobsd_reg_offsets.vscr_offset = offsetof (struct vreg, vscr);
   ppcobsd_reg_offsets.vrsave_offset = offsetof (struct vreg, vrsave);
 
+  /* VSX registers.  */
+  /* No vsx registers defined in sys/arch/powerpc/include/reg.h, so using 0 */
+  ppcobsd_reg_offsets.vshr0_offset = 0;
+
   /* Support debugging kernel virtual memory images.  */
   bsd_kvm_add_target (ppcobsd_supply_pcb);
 }

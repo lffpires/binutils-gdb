@@ -219,5 +219,8 @@ _initialize_ppcnbsd_tdep (void)
       ppcnbsd_reg_offsets.vr0_offset = 0;
       ppcnbsd_reg_offsets.vrsave_offset = 512;
       ppcnbsd_reg_offsets.vscr_offset = 524;
+
+      /* VSX registers.  */
+      ppcnbsd_reg_offsets.vshr0_offset = 0;
     }
 }

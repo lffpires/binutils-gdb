@@ -465,7 +465,10 @@ static const struct ppc_reg_offsets ppc32_linux_reg_offsets =
     /* AltiVec registers.  */
     /* .vr0_offset = */ 0,
     /* .vscr_offset = */ 512 + 12,
-    /* .vrsave_offset = */ 528
+    /* .vrsave_offset = */ 528,
+
+    /* VSX registers.  */
+    /* .vshr0_offset = */  0
   };
 
 static const struct ppc_reg_offsets ppc64_linux_reg_offsets =
@@ -490,7 +493,10 @@ static const struct ppc_reg_offsets ppc64_linux_reg_offsets =
     /* AltiVec registers.  */
     /* .vr0_offset = */ 0,
     /* .vscr_offset = */ 512 + 12,
-    /* .vrsave_offset = */ 528
+    /* .vrsave_offset = */ 528,
+
+    /* VSX registers.  */
+    /* .vshr0_offset = */  0
   };
 
 static const struct regset ppc32_linux_gregset = {

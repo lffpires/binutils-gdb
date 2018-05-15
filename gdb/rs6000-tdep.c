@@ -503,6 +503,18 @@ ppc_vrreg_offset (struct gdbarch_tdep *tdep,
   return -1;
 }
 
+static int
+ppc_vsxreg_offset (struct gdbarch_tdep *tdep,
+		  const struct ppc_reg_offsets *offsets,
+		  int regnum)
+{
+  if (regnum >= tdep->ppc_vsr0_upper_regnum
+      && regnum < tdep->ppc_vsr0_upper_regnum + ppc_num_vshrs)
+    return offsets->vshr0_offset + (regnum - tdep->ppc_vsr0_upper_regnum) * 8;
+
+  return -1;
+}
+
 /* Supply register REGNUM in the general-purpose register set REGSET
    from the buffer specified by GREGS and LEN to register cache
    REGCACHE.  If REGNUM is -1, do this for all registers in REGSET.  */
@@ -601,25 +613,29 @@ ppc_supply_vsxregset (const struct regset *regset, struct regcache *regcache,
 {
   struct gdbarch *gdbarch = regcache->arch ();
   struct gdbarch_tdep *tdep;
+  const struct ppc_reg_offsets *offsets;
+  size_t offset;
 
   if (!ppc_vsx_support_p (gdbarch))
     return;
 
   tdep = gdbarch_tdep (gdbarch);
+  offsets = (const struct ppc_reg_offsets *) regset->regmap;
 
   if (regnum == -1)
     {
       int i;
 
-      for (i = tdep->ppc_vsr0_upper_regnum;
-	   i < tdep->ppc_vsr0_upper_regnum + 32;
-	   i++)
-	ppc_supply_reg (regcache, i, (const gdb_byte *) vsxregs, 0, 8);
+      for (i = tdep->ppc_vsr0_upper_regnum, offset = offsets->vshr0_offset;
+	   i < tdep->ppc_vsr0_upper_regnum + ppc_num_vshrs;
+	   i++, offset += 8)
+	ppc_supply_reg (regcache, i, (const gdb_byte *) vsxregs, offset, 8);
 
       return;
     }
-  else
-    ppc_supply_reg (regcache, regnum, (const gdb_byte *) vsxregs, 0, 8);
+
+  offset = ppc_vsxreg_offset (tdep, offsets, regnum);
+  ppc_supply_reg (regcache, regnum, (const gdb_byte *) vsxregs, offset, 8);
 }
 
 /* Supply register REGNUM in the Altivec register set REGSET
@@ -660,7 +676,10 @@ ppc_supply_vrregset (const struct regset *regset, struct regcache *regcache,
   offset = ppc_vrreg_offset (tdep, offsets, regnum);
   if (regnum != tdep->ppc_vrsave_regnum
       && regnum != tdep->ppc_vrsave_regnum - 1)
-    ppc_supply_reg (regcache, regnum, (const gdb_byte *) vrregs, offset, 16);
+    {
+      /* not vrsave nor vscr */
+      ppc_supply_reg (regcache, regnum, (const gdb_byte *) vrregs, offset, 16);
+    }
   else
     ppc_supply_reg (regcache, regnum,
 		    (const gdb_byte *) vrregs, offset, 4);
@@ -769,25 +788,29 @@ ppc_collect_vsxregset (const struct regset *regset,
 {
   struct gdbarch *gdbarch = regcache->arch ();
   struct gdbarch_tdep *tdep;
+  const struct ppc_reg_offsets *offsets;
+  size_t offset;
 
   if (!ppc_vsx_support_p (gdbarch))
     return;
 
   tdep = gdbarch_tdep (gdbarch);
+  offsets = (const struct ppc_reg_offsets *) regset->regmap;
 
   if (regnum == -1)
     {
       int i;
 
-      for (i = tdep->ppc_vsr0_upper_regnum;
-	   i < tdep->ppc_vsr0_upper_regnum + 32;
-	   i++)
-	ppc_collect_reg (regcache, i, (gdb_byte *) vsxregs, 0, 8);
+      for (i = tdep->ppc_vsr0_upper_regnum, offset = offsets->vshr0_offset;
+	   i < tdep->ppc_vsr0_upper_regnum + ppc_num_vshrs;
+	   i++, offset += 8)
+	ppc_collect_reg (regcache, i, (gdb_byte *) vsxregs, offset, 8);
 
       return;
     }
-  else
-    ppc_collect_reg (regcache, regnum, (gdb_byte *) vsxregs, 0, 8);
+
+  offset = ppc_vsxreg_offset (tdep, offsets, regnum);
+  ppc_collect_reg (regcache, regnum, (gdb_byte *) vsxregs, offset, 8);
 }
 
 
@@ -3244,7 +3267,7 @@ static struct variant variants[] =
 
   /* 64-bit */
   {"powerpc64", "PowerPC 64-bit user-level", bfd_arch_powerpc,
-   bfd_mach_ppc64, &tdesc_powerpc_altivec64},
+   bfd_mach_ppc64, &tdesc_powerpc_vsx64},
   {"620", "Motorola PowerPC 620", bfd_arch_powerpc,
    bfd_mach_ppc_620, &tdesc_powerpc_64},
   {"630", "Motorola PowerPC 630", bfd_arch_powerpc,

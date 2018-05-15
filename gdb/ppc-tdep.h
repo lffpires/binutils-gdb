@@ -105,6 +105,9 @@ struct ppc_reg_offsets
   int vr0_offset;
   int vscr_offset;
   int vrsave_offset;
+
+  /* VSX registers.  */
+  int vshr0_offset;
 };
 
 extern void ppc_supply_reg (struct regcache *regcache, int regnum,

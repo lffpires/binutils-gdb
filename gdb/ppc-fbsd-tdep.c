@@ -57,12 +57,14 @@ static const struct ppc_reg_offsets ppc32_fbsd_reg_offsets =
 	/* .f0_offset = */     0,
 	/* .fpscr_offset = */  256,
 	/* .fpscr_size = */    8,
-#ifdef NOTYET
+
 	/* AltiVec registers.  */
 	/* .vr0_offset = */    0,
-	/* .vscr_offset = */   512 + 12,
-	/* .vrsave_offset = */ 512
-#endif
+	/* .vscr_offset = */   524,
+	/* .vrsave_offset = */ 520,
+
+	/* VSX registers.  */
+	/* .vshr0_offset = */  0
   };
 
 /* 64-bit regset descriptions.  */
@@ -85,12 +87,14 @@ static const struct ppc_reg_offsets ppc64_fbsd_reg_offsets =
 	/* .f0_offset = */     0,
 	/* .fpscr_offset = */  256,
 	/* .fpscr_size = */    8,
-#ifdef NOYET
+
 	/* AltiVec registers.  */
 	/* .vr0_offset = */    0,
-	/* .vscr_offset = */   512 + 12,
-	/* .vrsave_offset = */ 528
-#endif
+	/* .vscr_offset = */   524,
+	/* .vrsave_offset = */ 520,
+
+	/* VSX registers.  */
+	/* .vshr0_offset = */  0
   };
 
 /* 32-bit general-purpose register set.  */
@@ -117,6 +121,22 @@ static const struct regset ppc32_fbsd_fpregset = {
   ppc_collect_fpregset
 };
 
+/* Altivec register set. */
+
+static const struct regset ppc64_fbsd_vrregset = {
+  &ppc64_fbsd_reg_offsets,
+  ppc_supply_vrregset,
+  ppc_collect_vrregset
+};
+
+/* VSX register set. */
+
+static const struct regset ppc64_fbsd_vsxregset = {
+  &ppc64_fbsd_reg_offsets,
+  ppc_supply_vsxregset,
+  ppc_collect_vsxregset
+};
+
 const struct regset *
 ppc_fbsd_gregset (int wordsize)
 {
@@ -127,6 +147,18 @@ const struct regset *
 ppc_fbsd_fpregset (void)
 {
   return &ppc32_fbsd_fpregset;
+}
+
+const struct regset *
+ppc_fbsd_vrregset (void)
+{
+  return &ppc64_fbsd_vrregset;
+}
+
+const struct regset *
+ppc_fbsd_vsxregset (void)
+{
+  return &ppc64_fbsd_vsxregset;
 }
 
 /* Iterate over core file register note sections.  */

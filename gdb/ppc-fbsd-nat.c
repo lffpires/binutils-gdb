@@ -45,6 +45,70 @@ struct ppc_fbsd_nat_target final : public fbsd_nat_target
 
 static ppc_fbsd_nat_target the_ppc_fbsd_nat_target;
 
+/* These definitions should really come from machine/ptrace.h,
+   but we provide them in case gdb is built on an machine whose
+   FreeBSD version still doesn't have them. */
+
+#ifndef PT_FIRSTMACH
+#define PT_FIRSTMACH 64
+#endif
+
+/* PTRACE requests for Altivec registers.  */
+#ifndef PT_GETVRREGS
+#define PT_GETVRREGS    (PT_FIRSTMACH + 0)
+#define PT_SETVRREGS    (PT_FIRSTMACH + 1)
+#endif
+
+/* PTRACE requests for POWER7 VSX registers.  */
+#ifndef PT_GETVSRREGS
+#define PT_GETVSRREGS   (PT_FIRSTMACH + 2)
+#define PT_SETVSRREGS   (PT_FIRSTMACH + 3)
+#endif
+
+/* PT_GERVRREGS returns data as defined in machine/pcb.h:
+   32 128-bit registers + 8 spare bytes + VRSAVE (4 bytes) + VSCR (4 bytes) */
+#define SIZEOF_VRREGS (32*16 + 8 + 4 + 4)
+
+typedef char gdb_vrregset_t[SIZEOF_VRREGS];
+
+/* This is the layout of the POWER7 VSX registers and the way they overlap
+   with the existing FPR and VMX registers.
+
+                    VSR doubleword 0               VSR doubleword 1
+           ----------------------------------------------------------------
+   VSR[0]  |             FPR[0]            |                              |
+           ----------------------------------------------------------------
+   VSR[1]  |             FPR[1]            |                              |
+           ----------------------------------------------------------------
+           |              ...              |                              |
+           |              ...              |                              |
+           ----------------------------------------------------------------
+   VSR[30] |             FPR[30]           |                              |
+           ----------------------------------------------------------------
+   VSR[31] |             FPR[31]           |                              |
+           ----------------------------------------------------------------
+   VSR[32] |                             VR[0]                            |
+           ----------------------------------------------------------------
+   VSR[33] |                             VR[1]                            |
+           ----------------------------------------------------------------
+           |                              ...                             |
+           |                              ...                             |
+           ----------------------------------------------------------------
+   VSR[62] |                             VR[30]                           |
+           ----------------------------------------------------------------
+   VSR[63] |                             VR[31]                           |
+          ----------------------------------------------------------------
+
+   VSX has 64 128bit registers.  The first 32 registers overlap with
+   the FP registers (doubleword 0) and hence extend them with additional
+   64 bits (doubleword 1).  The other 32 regs overlap with the VMX
+   registers.  */
+#define SIZEOF_VSXREGS 32*8
+
+typedef char gdb_vsxregset_t[SIZEOF_VSXREGS];
+
+
+
 /* Fill GDB's register array with the general-purpose register values
    in *GREGSETP.  */
 
@@ -95,6 +159,32 @@ fill_fpregset (const struct regcache *regcache,
 			fpregsetp, sizeof (*fpregsetp));
 }
 
+/* Fill register REGNO in *VRREGSETP with the value in GDB's
+   register array. If REGNO is -1 do it for all registers.  */
+
+void
+fill_vrregset (const struct regcache *regcache,
+	       gdb_vrregset_t *vrregsetp, int regno)
+{
+  const struct regset *regset = ppc_fbsd_vrregset ();
+
+  ppc_collect_vrregset (regset, regcache, regno,
+			vrregsetp, sizeof (*vrregsetp));
+}
+
+/* Fill register REGNO in *VSXREGSETP with the value in GDB's
+   register array. If REGNO is -1 do it for all registers.  */
+
+void
+fill_vsxregset (const struct regcache *regcache,
+	       gdb_vsxregset_t *vsxregsetp, int regno)
+{
+  const struct regset *regset = ppc_fbsd_vsxregset ();
+
+  ppc_collect_vsxregset (regset, regcache, regno,
+			vsxregsetp, sizeof (*vsxregsetp));
+}
+
 /* Returns true if PT_GETFPREGS fetches this register.  */
 
 static int
@@ -120,6 +210,31 @@ getfpregs_supplies (struct gdbarch *gdbarch, int regno)
 	  || regno == tdep->ppc_fpscr_regnum);
 }
 
+/* Returns true if PT_GETVRREGS fetches this register.  */
+
+static int
+getvrregs_supplies (struct gdbarch *gdbarch, int regno)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+
+  /* vr, vrsave or vscr? */
+  return ((regno >= tdep->ppc_vr0_regnum
+	   && regno < tdep->ppc_vr0_regnum + ppc_num_vrs)
+	  || regno == tdep->ppc_vrsave_regnum
+	  || regno == tdep->ppc_vrsave_regnum - 1);
+}
+
+/* Returns true if PT_GETVSRREGS fetches this register.  */
+
+static int
+getvsrregs_supplies (struct gdbarch *gdbarch, int regno)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+
+  return (regno >= tdep->ppc_vsr0_upper_regnum
+	   && regno < tdep->ppc_vsr0_upper_regnum + ppc_num_vshrs);
+}
+
 /* Fetch register REGNO from the child process. If REGNO is -1, do it
    for all registers.  */
 
@@ -143,6 +258,28 @@ ppc_fbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
 	perror_with_name (_("Couldn't get FP registers"));
 
       ppc_supply_fpregset (fpregset, regcache, regno, &fpregs, sizeof fpregs);
+    }
+
+  if (regno == -1 || getvrregs_supplies (regcache->arch (), regno))
+    {
+      const struct regset *vrregset = ppc_fbsd_vrregset ();
+      gdb_vrregset_t vrregs;
+
+      if (ptrace (PT_GETVRREGS, pid, (PTRACE_TYPE_ARG3) &vrregs, 0) == -1)
+	perror_with_name (_("Couldn't get Altivec registers"));
+
+      ppc_supply_vrregset (vrregset, regcache, regno, &vrregs, sizeof vrregs);
+    }
+
+  if (regno == -1 || getvsrregs_supplies (regcache->arch (), regno))
+    {
+      const struct regset *vsxregset = ppc_fbsd_vsxregset ();
+      gdb_vsxregset_t vsxregs;
+
+      if (ptrace (PT_GETVSRREGS, pid, (PTRACE_TYPE_ARG3) &vsxregs, 0) == -1)
+	perror_with_name (_("Couldn't get VSX registers"));
+
+      ppc_supply_vsxregset (vsxregset, regcache, regno, &vsxregs, sizeof vsxregs);
     }
 }
 
@@ -174,6 +311,32 @@ ppc_fbsd_nat_target::store_registers (struct regcache *regcache, int regno)
 
       if (ptrace (PT_SETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
 	perror_with_name (_("Couldn't set FP registers"));
+    }
+
+  if (regno == -1 || getvrregs_supplies (regcache->arch (), regno))
+    {
+      gdb_vrregset_t vrregs;
+
+      if (ptrace (PT_GETVRREGS, pid, (PTRACE_TYPE_ARG3) &vrregs, 0) == -1)
+	perror_with_name (_("Couldn't get Altivec registers"));
+
+      fill_vrregset (regcache, &vrregs, regno);
+
+      if (ptrace (PT_SETVRREGS, pid, (PTRACE_TYPE_ARG3) &vrregs, 0) == -1)
+	perror_with_name (_("Couldn't set Altivec registers"));
+    }
+
+  if (regno == -1 || getvsrregs_supplies (regcache->arch (), regno))
+    {
+      gdb_vsxregset_t vsxregs;
+
+      if (ptrace (PT_GETVSRREGS, pid, (PTRACE_TYPE_ARG3) &vsxregs, 0) == -1)
+	perror_with_name (_("Couldn't get VSX registers"));
+
+      fill_vsxregset (regcache, &vsxregs, regno);
+
+      if (ptrace (PT_SETVSRREGS, pid, (PTRACE_TYPE_ARG3) &vsxregs, 0) == -1)
+	perror_with_name (_("Couldn't set VSX registers"));
     }
 }
 

@@ -293,6 +293,10 @@ _initialize_ppcobsd_tdep (void)
       ppcobsd_reg_offsets.vr0_offset = 0;
       ppcobsd_reg_offsets.vscr_offset = 512;
       ppcobsd_reg_offsets.vrsave_offset = 520;
+
+      /* VSX registers.  */
+      /* No vsx registers defined in sys/arch/powerpc/include/reg.h, so using 0 */
+      ppcobsd_reg_offsets.vshr0_offset = 0;
     }
 
   if (ppcobsd_fpreg_offsets.fpscr_offset == 0)

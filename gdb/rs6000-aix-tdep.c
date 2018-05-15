@@ -75,7 +75,10 @@ static struct ppc_reg_offsets rs6000_aix32_reg_offsets =
   /* AltiVec registers.  */
   -1, /* vr0_offset */
   -1, /* vscr_offset */
-  -1 /* vrsave_offset */
+  -1, /* vrsave_offset */
+
+  /* VSX registers.  */
+  -1 /* vshr0_offset */
 };
 
 static struct ppc_reg_offsets rs6000_aix64_reg_offsets =
@@ -100,7 +103,10 @@ static struct ppc_reg_offsets rs6000_aix64_reg_offsets =
   /* AltiVec registers.  */
   -1, /* vr0_offset */
   -1, /* vscr_offset */
-  -1 /* vrsave_offset */
+  -1, /* vrsave_offset */
+
+  /* VSX registers.  */
+  -1 /* vshr0_offset */
 };
 
 

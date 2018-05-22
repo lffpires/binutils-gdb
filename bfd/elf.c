@@ -10128,6 +10128,12 @@ elfcore_grok_freebsd_note (bfd *abfd, Elf_Internal_Note *note)
     case NT_ARM_VFP:
       return elfcore_grok_arm_vfp (abfd, note);
 
+    case NT_PPC_VMX:
+      return elfcore_grok_ppc_vmx (abfd, note);
+
+    case NT_PPC_VSX:
+      return elfcore_grok_ppc_vsx (abfd, note);
+
     default:
       return TRUE;
     }

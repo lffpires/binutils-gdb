@@ -10121,6 +10121,20 @@ elfcore_grok_freebsd_note (bfd *abfd, Elf_Internal_Note *note)
       else
 	return TRUE;
 
+    case NT_PPC_VMX:
+      if (note->namesz == 8
+	  && strcmp (note->namedata, "FreeBSD") == 0)
+	return elfcore_grok_ppc_vmx (abfd, note);
+      else
+	return TRUE;
+
+    case NT_PPC_VSX:
+      if (note->namesz == 8
+	  && strcmp (note->namedata, "FreeBSD") == 0)
+	return elfcore_grok_ppc_vsx (abfd, note);
+      else
+	return TRUE;
+
     case NT_FREEBSD_PTLWPINFO:
       return elfcore_make_note_pseudosection (abfd, ".note.freebsdcore.lwpinfo",
 					      note);
@@ -10797,7 +10811,11 @@ elfcore_write_ppc_vmx (bfd *abfd,
 		       const void *ppc_vmx,
 		       int size)
 {
-  char *note_name = "LINUX";
+  char *note_name;
+  if (get_elf_backend_data (abfd)->elf_osabi == ELFOSABI_FREEBSD)
+    note_name = "FreeBSD";
+  else
+    note_name = "LINUX";
   return elfcore_write_note (abfd, buf, bufsiz,
 			     note_name, NT_PPC_VMX, ppc_vmx, size);
 }
@@ -10809,7 +10827,11 @@ elfcore_write_ppc_vsx (bfd *abfd,
 		       const void *ppc_vsx,
 		       int size)
 {
-  char *note_name = "LINUX";
+  char *note_name;
+  if (get_elf_backend_data (abfd)->elf_osabi == ELFOSABI_FREEBSD)
+    note_name = "FreeBSD";
+  else
+    note_name = "LINUX";
   return elfcore_write_note (abfd, buf, bufsiz,
 			     note_name, NT_PPC_VSX, ppc_vsx, size);
 }

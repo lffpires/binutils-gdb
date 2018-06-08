@@ -38,6 +38,19 @@
 
 #include "arch/ppc-fbsd-common.h"
 
+static void
+ppc_fbsd_collect_vrregset (const struct regset *regset,
+			   const struct regcache *regcache,
+			   int regnum, void *buf, size_t len)
+{
+  gdb_byte *vrregs = (gdb_byte *) buf;
+
+  /* Zero out the unused bytes in ppc32_fbsd_vrregmap
+     in case they get displayed somewhere (e.g. in core files).  */
+  memset (&vrregs[32 * 16], 0, 8);
+
+  regcache_collect_regset (regset, regcache, regnum, buf, len);
+}
 
 /* 32-bit regset descriptions.  */
 
@@ -109,7 +122,7 @@ static const struct regset ppc32_fbsd_fpregset = {
 
 static const struct regcache_map_entry ppc32_fbsd_vrregmap[] = {
   { 32, PPC_VR0_REGNUM, 16 },
-  { 1, REGCACHE_MAP_SKIP, 2},
+  { 1, REGCACHE_MAP_SKIP, 8},
   { 1, PPC_VRSAVE_REGNUM, 4 },
   { 1, PPC_VSCR_REGNUM, 4 },
   { 0 }
@@ -118,7 +131,7 @@ static const struct regcache_map_entry ppc32_fbsd_vrregmap[] = {
 static const struct regset ppc32_fbsd_vrregset = {
   ppc32_fbsd_vrregmap,
   regcache_supply_regset,
-  regcache_collect_regset
+  ppc_fbsd_collect_vrregset
 };
 
 static const struct regcache_map_entry ppc32_fbsd_vsxregmap[] = {

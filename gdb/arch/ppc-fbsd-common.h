@@ -20,6 +20,8 @@
 #ifndef ARCH_PPC_FBSD_COMMON_H
 #define ARCH_PPC_FBSD_COMMON_H
 
+struct target_desc;
+
 #define PPC_FBSD_SIZEOF_GREGSET_32 148
 #define PPC_FBSD_SIZEOF_GREGSET_64 296
 #define PPC_FBSD_SIZEOF_FPREGSET 264
@@ -27,8 +29,6 @@
 /* PT_GETVRREGS returns data as defined in machine/pcb.h:
    32 128-bit registers + 8 spare bytes + VRSAVE (4 bytes) + VSCR (4 bytes) */
 #define PPC_FBSD_SIZEOF_VRREGSET (32*16 + 8 + 4 + 4)
-
-typedef char gdb_vrregset_t[PPC_FBSD_SIZEOF_VRREGSET];
 
 /* This is the layout of the POWER7 VSX registers and the way they overlap
    with the existing FPR and VMX registers.
@@ -63,8 +63,6 @@ typedef char gdb_vrregset_t[PPC_FBSD_SIZEOF_VRREGSET];
    64 bits (doubleword 1).  The other 32 regs overlap with the VMX
    registers.  */
 #define PPC_FBSD_SIZEOF_VSXREGSET (32*8)
-
-typedef char gdb_vsxregset_t[PPC_FBSD_SIZEOF_VSXREGSET];
 
 /* Features used to determine the target description.  */
 struct ppc_fbsd_features

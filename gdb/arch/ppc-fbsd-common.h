@@ -27,7 +27,7 @@ struct target_desc;
 #define PPC_FBSD_SIZEOF_FPREGSET 264
 
 /* PT_GETVRREGS returns data as defined in machine/pcb.h:
-   32 128-bit registers + 8 spare bytes + VRSAVE (4 bytes) + VSCR (4 bytes) */
+   32 128-bit registers + 8 spare bytes + VRSAVE (4 bytes) + VSCR (4 bytes).  */
 #define PPC_FBSD_SIZEOF_VRREGSET (32*16 + 8 + 4 + 4)
 
 /* This is the layout of the POWER7 VSX registers and the way they overlap

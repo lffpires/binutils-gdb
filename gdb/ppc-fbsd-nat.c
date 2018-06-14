@@ -42,7 +42,7 @@
 
 /* These definitions should really come from machine/ptrace.h,
    but we provide them in case gdb is built on an machine whose
-   FreeBSD version still doesn't have them. */
+   FreeBSD version still doesn't have them.  */
 
 #ifndef PT_FIRSTMACH
 #define PT_FIRSTMACH 64
@@ -161,16 +161,7 @@ fetch_altivec_registers (struct regcache *regcache, int tid,
 
   ret = ptrace (PT_GETVRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
   if (ret < 0)
-    {
-      if (errno == EINVAL)
-        {
-	  /* Mark registers as unavailable */
-	  vrregset->supply_regset (vrregset, regcache, regno, NULL,
-				   PPC_FBSD_SIZEOF_VRREGSET);
-          return;
-        }
-      perror_with_name (_("Unable to fetch AltiVec registers"));
-    }
+    perror_with_name (_("Unable to fetch AltiVec registers"));
 
   vrregset->supply_regset (vrregset, regcache, regno, &regs,
 			   PPC_FBSD_SIZEOF_VRREGSET);
@@ -188,16 +179,7 @@ fetch_vsx_registers (struct regcache *regcache, int tid, int regno)
 
   ret = ptrace (PT_GETVSRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
   if (ret < 0)
-    {
-      if (errno == EINVAL)
-	{
-	  /* Mark registers as unavailable */
-	  vsxregset->supply_regset (vsxregset, regcache, regno, NULL,
-				    PPC_FBSD_SIZEOF_VSXREGSET);
-	  return;
-	}
-      perror_with_name (_("Unable to fetch VSX registers"));
-    }
+    perror_with_name (_("Unable to fetch VSX registers"));
 
   vsxregset->supply_regset (vsxregset, regcache, regno, &regs,
 			    PPC_FBSD_SIZEOF_VSXREGSET);
@@ -213,13 +195,7 @@ store_altivec_registers (const struct regcache *regcache, int tid,
 
   ret = ptrace (PT_GETVRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
   if (ret < 0)
-    {
-      if (errno == EINVAL)
-        {
-          return;
-        }
-      perror_with_name (_("Unable to fetch AltiVec registers"));
-    }
+    perror_with_name (_("Unable to fetch AltiVec registers"));
 
   vrregset->collect_regset (vrregset, regcache, regno, &regs,
 			    PPC_FBSD_SIZEOF_VRREGSET);
@@ -238,13 +214,7 @@ store_vsx_registers (const struct regcache *regcache, int tid, int regno)
 
   ret = ptrace (PT_GETVSRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
   if (ret < 0)
-    {
-      if (errno == EINVAL)
-	{
-	  return;
-	}
-      perror_with_name (_("Unable to fetch VSX registers"));
-    }
+    perror_with_name (_("Unable to fetch VSX registers"));
 
   vsxregset->collect_regset (vsxregset, regcache, regno, &regs,
 			     PPC_FBSD_SIZEOF_VSXREGSET);
@@ -261,20 +231,20 @@ ppc_fbsd_target_wordsize (int tid)
 
 #ifdef __powerpc64__
   /* Check for 64-bit inferior process.  This is the case when the host is
-     64-bit, and PT_GETREGS returns less data than the length of struct reg. */
+     64-bit, and PT_GETREGS returns less data than the length of gdb_gregset_t.  */
 
   gdb_gregset_t regs0;
   gdb_gregset_t regs1;
 
   /* Initialize regs0 with 00's and regs1 with ff's. If, after ptrace fills
      them, they have the same contents, it means ptrace returned data for a
-     64-bit inferior. */
-  memset (&regs0, 0, sizeof regs0);
-  memset (&regs1, 0xff, sizeof regs1);
+     64-bit inferior.  */
+  memset (&regs0, 0, sizeof (regs0));
+  memset (&regs1, 0xff, sizeof (regs1));
 
   if (ptrace (PT_GETREGS, tid, (PTRACE_TYPE_ARG3) &regs0, 0) >= 0
       && ptrace (PT_GETREGS, tid, (PTRACE_TYPE_ARG3) &regs1, 0) >= 0)
-    if (memcmp(&regs0, &regs1, sizeof regs0) == 0)
+    if (memcmp (&regs0, &regs1, sizeof (regs0)) == 0)
       wordsize = 8;
 #endif
 
@@ -305,7 +275,7 @@ ppc_fbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
       if (ptrace (PT_GETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
 	perror_with_name (_("Couldn't get FP registers"));
 
-      ppc_supply_fpregset (fpregset, regcache, regno, &fpregs, sizeof fpregs);
+      ppc_supply_fpregset (fpregset, regcache, regno, &fpregs, sizeof (fpregs));
     }
 
   if (tdep->ppc_vr0_regnum != -1 && tdep->ppc_vrsave_regnum != -1)
@@ -362,8 +332,6 @@ const struct target_desc *
 ppc_fbsd_nat_target::read_description ()
 {
   int tid = ptid_get_lwp (inferior_ptid);
-  if (tid == 0)
-    tid = ptid_get_pid (inferior_ptid);
 
   struct ppc_fbsd_features features = ppc_fbsd_no_features;
 

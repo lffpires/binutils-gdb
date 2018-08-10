@@ -679,6 +679,7 @@ ALL_TARGET_OBS = \
 	arch/arm-get-next-pcs.o \
 	arch/arm-linux.o \
 	arch/i386.o \
+	arch/ppc-fbsd-common.o \
 	arch/ppc-linux-common.o \
 	arm-bsd-tdep.o \
 	arm-fbsd-tdep.o \
@@ -1414,6 +1415,7 @@ HFILES_NO_SRCDIR = \
 	arch/aarch64-insn.h \
 	arch/arm.h \
 	arch/i386.h \
+	arch/ppc-fbsd-common.h \
 	arch/ppc-linux-common.h \
 	arch/ppc-linux-tdesc.h \
 	cli/cli-cmds.h \

@@ -36,6 +36,21 @@
 #include "fbsd-tdep.h"
 #include "solib-svr4.h"
 
+#include "arch/ppc-fbsd-common.h"
+
+static void
+ppc_fbsd_collect_vrregset (const struct regset *regset,
+			   const struct regcache *regcache,
+			   int regnum, void *buf, size_t len)
+{
+  gdb_byte *vrregs = (gdb_byte *) buf;
+
+  /* Zero out the unused bytes in ppc32_fbsd_vrregmap
+     in case they get displayed somewhere (e.g. in core files).  */
+  memset (&vrregs[32 * 16], 0, 8);
+
+  regcache_collect_regset (regset, regcache, regnum, buf, len);
+}
 
 /* 32-bit regset descriptions.  */
 
@@ -105,6 +120,31 @@ static const struct regset ppc32_fbsd_fpregset = {
   ppc_collect_fpregset
 };
 
+static const struct regcache_map_entry ppc32_fbsd_vrregmap[] = {
+  { 32, PPC_VR0_REGNUM, 16 },
+  { 1, REGCACHE_MAP_SKIP, 8},
+  { 1, PPC_VRSAVE_REGNUM, 4 },
+  { 1, PPC_VSCR_REGNUM, 4 },
+  { 0 }
+};
+
+static const struct regset ppc32_fbsd_vrregset = {
+  ppc32_fbsd_vrregmap,
+  regcache_supply_regset,
+  ppc_fbsd_collect_vrregset
+};
+
+static const struct regcache_map_entry ppc32_fbsd_vsxregmap[] = {
+  { 32, PPC_VSR0_UPPER_REGNUM, 8 },
+  { 0 }
+};
+
+static const struct regset ppc32_fbsd_vsxregset = {
+  ppc32_fbsd_vsxregmap,
+  regcache_supply_regset,
+  regcache_collect_regset
+};
+
 const struct regset *
 ppc_fbsd_gregset (int wordsize)
 {
@@ -117,6 +157,18 @@ ppc_fbsd_fpregset (void)
   return &ppc32_fbsd_fpregset;
 }
 
+const struct regset *
+ppc_fbsd_vrregset (void)
+{
+  return &ppc32_fbsd_vrregset;
+}
+
+const struct regset *
+ppc_fbsd_vsxregset (void)
+{
+  return &ppc32_fbsd_vsxregset;
+}
+
 /* Iterate over core file register note sections.  */
 
 static void
@@ -126,12 +178,56 @@ ppcfbsd_iterate_over_regset_sections (struct gdbarch *gdbarch,
 				      const struct regcache *regcache)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  int have_altivec = tdep->ppc_vr0_regnum != -1;
+  int have_vsx = tdep->ppc_vsr0_upper_regnum != -1;
 
   if (tdep->wordsize == 4)
-    cb (".reg", 148, &ppc32_fbsd_gregset, NULL, cb_data);
+    cb (".reg", PPC_FBSD_SIZEOF_GREGSET_32, &ppc32_fbsd_gregset, NULL, cb_data);
   else
-    cb (".reg", 296, &ppc64_fbsd_gregset, NULL, cb_data);
-  cb (".reg2", 264, &ppc32_fbsd_fpregset, NULL, cb_data);
+    cb (".reg", PPC_FBSD_SIZEOF_GREGSET_64, &ppc64_fbsd_gregset, NULL, cb_data);
+  cb (".reg2", PPC_FBSD_SIZEOF_FPREGSET, &ppc32_fbsd_fpregset, NULL, cb_data);
+
+  if (have_altivec)
+    cb (".reg-ppc-vmx", PPC_FBSD_SIZEOF_VRREGSET, ppc_fbsd_vrregset (),
+	"ppc Altivec", cb_data);
+
+  if (have_vsx)
+    cb (".reg-ppc-vsx", PPC_FBSD_SIZEOF_VSXREGSET, ppc_fbsd_vsxregset (),
+	"POWER7 VSX", cb_data);
+}
+
+static const struct target_desc *
+ppc_fbsd_core_read_description (struct gdbarch *gdbarch,
+				struct target_ops *target,
+				bfd *abfd)
+{
+  struct ppc_fbsd_features features = ppc_fbsd_no_features;
+  asection *altivec = bfd_get_section_by_name (abfd, ".reg-ppc-vmx");
+  asection *vsx = bfd_get_section_by_name (abfd, ".reg-ppc-vsx");
+  asection *section = bfd_get_section_by_name (abfd, ".reg");
+
+  if (! section)
+    return NULL;
+
+  switch (bfd_section_size (abfd, section))
+    {
+    case PPC_FBSD_SIZEOF_GREGSET_32:
+      features.wordsize = 4;
+      break;
+    case PPC_FBSD_SIZEOF_GREGSET_64:
+      features.wordsize = 8;
+      break;
+    default:
+      return NULL;
+    }
+
+  if (altivec)
+    features.altivec = true;
+
+  if (vsx)
+    features.vsx = true;
+
+  return ppc_fbsd_match_description (features);
 }
 
 /* Default page size.  */
@@ -316,6 +412,8 @@ ppcfbsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 					     svr4_lp64_fetch_link_map_offsets);
       set_gdbarch_gcore_bfd_target (gdbarch, "elf64-powerpc");
     }
+
+  set_gdbarch_core_read_description (gdbarch, ppc_fbsd_core_read_description);
 
   set_gdbarch_iterate_over_regset_sections
     (gdbarch, ppcfbsd_iterate_over_regset_sections);

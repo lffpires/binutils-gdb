@@ -21,6 +21,7 @@
 #include "gdbcore.h"
 #include "inferior.h"
 #include "regcache.h"
+#include "regset.h"
 
 #include <sys/types.h>
 #include <sys/procfs.h>
@@ -37,10 +38,37 @@
 #include "inf-ptrace.h"
 #include "bsd-kvm.h"
 
+#include "arch/ppc-fbsd-common.h"
+
+/* These definitions should really come from machine/ptrace.h,
+   but we provide them in case gdb is built on an machine whose
+   FreeBSD version still doesn't have them.  */
+
+#ifndef PT_FIRSTMACH
+#define PT_FIRSTMACH 64
+#endif
+
+/* PTRACE requests for Altivec registers.  */
+#ifndef PT_GETVRREGS
+#define PT_GETVRREGS    (PT_FIRSTMACH + 0)
+#define PT_SETVRREGS    (PT_FIRSTMACH + 1)
+#endif
+
+/* PTRACE requests for POWER7 VSX registers.  */
+#ifndef PT_GETVSRREGS
+#define PT_GETVSRREGS   (PT_FIRSTMACH + 2)
+#define PT_SETVSRREGS   (PT_FIRSTMACH + 3)
+#endif
+
+typedef char gdb_vrregset_t[PPC_FBSD_SIZEOF_VRREGSET];
+typedef char gdb_vsxregset_t[PPC_FBSD_SIZEOF_VSXREGSET];
+
 struct ppc_fbsd_nat_target final : public fbsd_nat_target
 {
   void fetch_registers (struct regcache *, int) override;
   void store_registers (struct regcache *, int) override;
+
+  const struct target_desc *read_description () override;
 };
 
 static ppc_fbsd_nat_target the_ppc_fbsd_nat_target;
@@ -120,6 +148,109 @@ getfpregs_supplies (struct gdbarch *gdbarch, int regno)
 	  || regno == tdep->ppc_fpscr_regnum);
 }
 
+/* The kernel ptrace interface for AltiVec registers uses the
+   registers set mechanism, as opposed to the interface for all the
+   other registers, that stores/fetches each register individually.  */
+static void
+fetch_altivec_registers (struct regcache *regcache, int tid,
+			 int regno)
+{
+  int ret;
+  gdb_vrregset_t regs;
+  const struct regset *vrregset = ppc_fbsd_vrregset ();
+
+  ret = ptrace (PT_GETVRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to fetch AltiVec registers"));
+
+  vrregset->supply_regset (vrregset, regcache, regno, &regs,
+			   PPC_FBSD_SIZEOF_VRREGSET);
+}
+
+/* The kernel ptrace interface for POWER7 VSX registers uses the
+   registers set mechanism, as opposed to the interface for all the
+   other registers, that stores/fetches each register individually.  */
+static void
+fetch_vsx_registers (struct regcache *regcache, int tid, int regno)
+{
+  int ret;
+  gdb_vsxregset_t regs;
+  const struct regset *vsxregset = ppc_fbsd_vsxregset ();
+
+  ret = ptrace (PT_GETVSRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to fetch VSX registers"));
+
+  vsxregset->supply_regset (vsxregset, regcache, regno, &regs,
+			    PPC_FBSD_SIZEOF_VSXREGSET);
+}
+
+static void
+store_altivec_registers (const struct regcache *regcache, int tid,
+			 int regno)
+{
+  int ret;
+  gdb_vrregset_t regs;
+  const struct regset *vrregset = ppc_fbsd_vrregset ();
+
+  ret = ptrace (PT_GETVRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to fetch AltiVec registers"));
+
+  vrregset->collect_regset (vrregset, regcache, regno, &regs,
+			    PPC_FBSD_SIZEOF_VRREGSET);
+
+  ret = ptrace (PT_SETVRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to store AltiVec registers"));
+}
+
+static void
+store_vsx_registers (const struct regcache *regcache, int tid, int regno)
+{
+  int ret;
+  gdb_vsxregset_t regs;
+  const struct regset *vsxregset = ppc_fbsd_vsxregset ();
+
+  ret = ptrace (PT_GETVSRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to fetch VSX registers"));
+
+  vsxregset->collect_regset (vsxregset, regcache, regno, &regs,
+			     PPC_FBSD_SIZEOF_VSXREGSET);
+
+  ret = ptrace (PT_SETVSRREGS, tid, (PTRACE_TYPE_ARG3) &regs, 0);
+  if (ret < 0)
+    perror_with_name (_("Unable to store VSX registers"));
+}
+
+static int
+ppc_fbsd_target_wordsize (int tid)
+{
+  int wordsize = 4;
+
+#ifdef __powerpc64__
+  /* Check for 64-bit inferior process.  This is the case when the host is
+     64-bit, and PT_GETREGS returns less data than the length of gdb_gregset_t.  */
+
+  gdb_gregset_t regs0;
+  gdb_gregset_t regs1;
+
+  /* Initialize regs0 with 00's and regs1 with ff's. If, after ptrace fills
+     them, they have the same contents, it means ptrace returned data for a
+     64-bit inferior.  */
+  memset (&regs0, 0, sizeof (regs0));
+  memset (&regs1, 0xff, sizeof (regs1));
+
+  if (ptrace (PT_GETREGS, tid, (PTRACE_TYPE_ARG3) &regs0, 0) >= 0
+      && ptrace (PT_GETREGS, tid, (PTRACE_TYPE_ARG3) &regs1, 0) >= 0)
+    if (memcmp (&regs0, &regs1, sizeof (regs0)) == 0)
+      wordsize = 8;
+#endif
+
+  return wordsize;
+}
+
 /* Fetch register REGNO from the child process. If REGNO is -1, do it
    for all registers.  */
 
@@ -128,13 +259,15 @@ ppc_fbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
 {
   gdb_gregset_t regs;
   pid_t pid = ptid_get_lwp (regcache->ptid ());
+  struct gdbarch *gdbarch = regcache->arch ();
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
   if (ptrace (PT_GETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
     perror_with_name (_("Couldn't get registers"));
 
   supply_gregset (regcache, &regs);
 
-  if (regno == -1 || getfpregs_supplies (regcache->arch (), regno))
+  if (regno == -1 || getfpregs_supplies (gdbarch, regno))
     {
       const struct regset *fpregset = ppc_fbsd_fpregset ();
       gdb_fpregset_t fpregs;
@@ -142,8 +275,16 @@ ppc_fbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
       if (ptrace (PT_GETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
 	perror_with_name (_("Couldn't get FP registers"));
 
-      ppc_supply_fpregset (fpregset, regcache, regno, &fpregs, sizeof fpregs);
+      ppc_supply_fpregset (fpregset, regcache, regno, &fpregs, sizeof (fpregs));
     }
+
+  if (tdep->ppc_vr0_regnum != -1 && tdep->ppc_vrsave_regnum != -1)
+    if (regno == -1 || altivec_register_p (gdbarch, regno))
+      fetch_altivec_registers (regcache, pid, regno);
+
+  if (tdep->ppc_vsr0_upper_regnum != -1)
+    if (regno == -1 || vsx_register_p (gdbarch, regno))
+      fetch_vsx_registers (regcache, pid, regno);
 }
 
 /* Store register REGNO back into the child process. If REGNO is -1,
@@ -154,6 +295,8 @@ ppc_fbsd_nat_target::store_registers (struct regcache *regcache, int regno)
 {
   gdb_gregset_t regs;
   pid_t pid = ptid_get_lwp (regcache->ptid ());
+  struct gdbarch *gdbarch = regcache->arch ();
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
   if (ptrace (PT_GETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
     perror_with_name (_("Couldn't get registers"));
@@ -163,7 +306,7 @@ ppc_fbsd_nat_target::store_registers (struct regcache *regcache, int regno)
   if (ptrace (PT_SETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
     perror_with_name (_("Couldn't write registers"));
 
-  if (regno == -1 || getfpregs_supplies (regcache->arch (), regno))
+  if (regno == -1 || getfpregs_supplies (gdbarch, regno))
     {
       gdb_fpregset_t fpregs;
 
@@ -175,6 +318,46 @@ ppc_fbsd_nat_target::store_registers (struct regcache *regcache, int regno)
       if (ptrace (PT_SETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
 	perror_with_name (_("Couldn't set FP registers"));
     }
+
+  if (tdep->ppc_vr0_regnum != -1 && tdep->ppc_vrsave_regnum != -1)
+    if (regno == -1 || altivec_register_p (gdbarch, regno))
+      store_altivec_registers (regcache, pid, regno);
+
+  if (tdep->ppc_vsr0_upper_regnum != -1)
+    if (regno == -1 || vsx_register_p (gdbarch, regno))
+      store_vsx_registers (regcache, pid, regno);
+}
+
+const struct target_desc *
+ppc_fbsd_nat_target::read_description ()
+{
+  int tid = ptid_get_lwp (inferior_ptid);
+
+  struct ppc_fbsd_features features = ppc_fbsd_no_features;
+
+  features.wordsize = ppc_fbsd_target_wordsize (tid);
+
+  gdb_vsxregset_t vsxregset;
+
+  if (ptrace (PT_GETVSRREGS, tid, (PTRACE_TYPE_ARG3) &vsxregset, 0) >= 0)
+      features.vsx = true;
+
+  /* EINVAL means that the PT_GETVSRREGS request isn't supported.
+     Anything else needs to be reported.  */
+  else if (errno != EINVAL)
+    perror_with_name (_("Unable to fetch VSX registers"));
+
+  gdb_vrregset_t vrregset;
+
+  if (ptrace (PT_GETVRREGS, tid, (PTRACE_TYPE_ARG3) &vrregset, 0) >= 0)
+    features.altivec = true;
+
+  /* EINVAL means that the PT_GETVRREGS request isn't supported.
+     Anything else needs to be reported.  */
+  else if (errno != EINVAL)
+    perror_with_name (_("Unable to fetch AltiVec registers"));
+
+  return ppc_fbsd_match_description (features);
 }
 
 /* Architecture specific function that reconstructs the
